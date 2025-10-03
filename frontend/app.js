@@ -101,9 +101,12 @@ function displaySessions(sessions) {
             weatherInfo = `
                 <div class="weather-info">
                     ${session.wave_height ? `<div>Bølger: ${session.wave_height.toFixed(1)}m</div>` : ''}
+                    ${session.wave_period ? `<div>Periode: ${session.wave_period.toFixed(1)}s</div>` : ''}
+                    ${session.wave_direction ? `<div>Bølgeretning: ${session.wave_direction}°</div>` : ''}
                     ${session.wind_speed ? `<div>Vind: ${session.wind_speed.toFixed(1)} m/s</div>` : ''}
                     ${session.wind_direction ? `<div>Vindretning: ${session.wind_direction}°</div>` : ''}
                     ${session.offshore_wind !== null ? `<div>${session.offshore_wind ? 'Offshore' : 'Onshore'}</div>` : ''}
+                    ${session.surf_score ? `<div class="surf-score">Surf Score: ${session.surf_score.toFixed(1)}/10</div>` : ''}
                 </div>
             `;
         }
@@ -115,7 +118,10 @@ function displaySessions(sessions) {
                         <div class="session-spot">${spotName}</div>
                         <div class="session-date">${date}</div>
                     </div>
-                    <div class="session-rating">${session.rating}/5</div>
+                    <div class="session-actions">
+                        <div class="session-rating">${session.rating}/5</div>
+                        <button class="delete-btn" onclick="deleteSession(${session.id})" title="Slett økt">🗑️</button>
+                    </div>
                 </div>
                 ${session.notes ? `<p><strong>Notater:</strong> ${session.notes}</p>` : ''}
                 ${weatherInfo}
@@ -180,6 +186,28 @@ function resetForm() {
     });
     document.getElementById('rating-text').textContent = 'Velg rating';
     setDefaultDateTime();
+}
+
+async function deleteSession(sessionId) {
+    if (!confirm('Er du sikker på at du vil slette denne økten?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/sessions/${sessionId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showMessage('Økt slettet!', 'success');
+            loadSessions(); // Refresh sessions list
+        } else {
+            showMessage('Feil ved sletting av økt', 'error');
+        }
+    } catch (error) {
+        showMessage('Feil ved sletting av økt', 'error');
+        console.error('Error deleting session:', error);
+    }
 }
 
 function showMessage(message, type) {

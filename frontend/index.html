@@ -139,9 +139,39 @@
         
         .session-header {
             display: flex;
-            justify-content: between;
+            justify-content: space-between;
             align-items: center;
             margin-bottom: 10px;
+        }
+        
+        .session-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .delete-btn {
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+        
+        .delete-btn:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .surf-score {
+            font-weight: bold;
+            color: #667eea;
+            background: #f8f9ff;
+            padding: 2px 6px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-top: 5px;
         }
         
         .session-spot {

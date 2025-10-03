@@ -41,6 +41,8 @@ class SurfSession(Base):
     air_temperature = Column(Float, nullable=True)  # lufttemperatur (C)
     water_temperature = Column(Float, nullable=True)  # vanntemperatur (C)
     precipitation = Column(Float, nullable=True)  # nedbør (mm)
+    humidity = Column(Float, nullable=True)  # luftfuktighet (%)
+    pressure = Column(Float, nullable=True)  # lufttrykk (hPa)
     
     # Tidevann
     tide_level = Column(Float, nullable=True)  # tidevannsnivå (m)
@@ -57,6 +59,8 @@ class SurfSession(Base):
     # Metadata
     forecast_lead_time = Column(Integer, nullable=True)  # hvor mange timer før økta ble varselet hentet
     yr_api_timestamp = Column(DateTime, nullable=True)  # når værdata ble hentet fra YR
+    data_sources = Column(String, nullable=True)  # hvilke APIer som ble brukt (yr, stormglass, etc)
+    surf_score = Column(Float, nullable=True)  # beregnet surf score 0-10
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

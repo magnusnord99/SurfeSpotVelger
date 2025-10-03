@@ -10,16 +10,15 @@ from datetime import datetime
 from typing import List, Optional
 
 from database import get_db, create_tables, SurfSession, SurfSpot
-from weather_service import YRWeatherService, OceanForecastService, calculate_wind_offshore, calculate_swell_component
+from hybrid_surf_service import HybridSurfService, calculate_wind_offshore, calculate_swell_component, calculate_surf_score
 
 app = FastAPI(title="SurfeSpotVelger API", version="1.0.0")
 
 # Mount static files for frontend
-app.mount("/static", StaticFiles(directory="../frontend"), name="static")
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
-# Initialize weather services
-weather_service = YRWeatherService()
-ocean_service = OceanForecastService()
+# Initialize hybrid surf service
+surf_service = HybridSurfService()
 
 # Pydantic models for API
 class SurfSessionCreate(BaseModel):
@@ -38,9 +37,17 @@ class SurfSessionResponse(BaseModel):
     board_type: Optional[str]
     notes: Optional[str]
     wave_height: Optional[float]
+    wave_period: Optional[float]
+    wave_direction: Optional[float]
     wind_speed: Optional[float]
     wind_direction: Optional[float]
     offshore_wind: Optional[bool]
+    water_temperature: Optional[float]
+    air_temperature: Optional[float]
+    humidity: Optional[float]
+    pressure: Optional[float]
+    surf_score: Optional[float]
+    data_sources: Optional[str]
     created_at: datetime
 
 class SurfSpotResponse(BaseModel):
@@ -59,7 +66,7 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the main frontend page"""
-    with open("../frontend/index.html", "r", encoding="utf-8") as f:
+    with open("frontend/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/api/spots", response_model=List[SurfSpotResponse])
@@ -88,55 +95,63 @@ async def create_session(session_data: SurfSessionCreate, db: Session = Depends(
         notes=session_data.notes
     )
     
-    # Hent værdata fra YR
-    weather_data = weather_service.get_weather_data(
-        spot.latitude, 
-        spot.longitude, 
+    # Hent komplett surf data fra hybrid service
+    surf_data = surf_service.get_complete_surf_data(
+        spot.latitude,
+        spot.longitude,
         session_data.date_time
     )
     
-    if weather_data:
-        session.air_temperature = weather_data.get('air_temperature')
-        session.wind_speed = weather_data.get('wind_speed')
-        session.wind_direction = weather_data.get('wind_direction')
-        session.wind_gust = weather_data.get('wind_gust')
-        session.precipitation = weather_data.get('precipitation')
-        session.forecast_lead_time = int(weather_data.get('lead_time_hours', 0))
+    if surf_data:
+        # Værdata
+        session.air_temperature = surf_data.get('air_temperature')
+        session.wind_speed = surf_data.get('wind_speed')
+        session.wind_direction = surf_data.get('wind_direction')
+        session.wind_gust = surf_data.get('wind_gust')
+        session.precipitation = surf_data.get('precipitation')
+        session.humidity = surf_data.get('humidity')
+        session.pressure = surf_data.get('pressure')
+        
+        # Bølgedata
+        session.wave_height = surf_data.get('wave_height')
+        session.wave_period = surf_data.get('wave_period')
+        session.wave_direction = surf_data.get('wave_direction')
+        session.water_temperature = surf_data.get('water_temperature')
+        
+        # Metadata
+        session.data_sources = ', '.join(surf_data.get('data_sources', []))
         session.yr_api_timestamp = datetime.utcnow()
         
         # Beregn offshore vind
-        if weather_data.get('wind_direction') is not None:
+        if surf_data.get('wind_direction') is not None:
             session.offshore_wind = calculate_wind_offshore(
-                weather_data['wind_direction'], 
+                surf_data['wind_direction'], 
                 spot.orientation
             )
-    
-    # Hent bølgedata
-    wave_data = ocean_service.get_wave_data(
-        spot.latitude,
-        spot.longitude, 
-        session_data.date_time
-    )
-    
-    if wave_data:
-        session.wave_height = wave_data.get('wave_height')
-        session.wave_period = wave_data.get('wave_period') 
-        session.wave_direction = wave_data.get('wave_direction')
-        session.water_temperature = wave_data.get('water_temperature')
         
         # Beregn swell component
-        if wave_data.get('wave_direction') is not None and wave_data.get('wave_height') is not None:
+        if surf_data.get('wave_direction') is not None and surf_data.get('wave_height') is not None:
             session.swell_component = calculate_swell_component(
-                wave_data['wave_height'],
-                wave_data['wave_direction'],
+                surf_data['wave_height'],
+                surf_data['wave_direction'],
                 spot.orientation
             )
             
             # Beregn vinkel-forskjell
-            angle_diff = abs(wave_data['wave_direction'] - spot.orientation)
+            angle_diff = abs(surf_data['wave_direction'] - spot.orientation)
             if angle_diff > 180:
                 angle_diff = 360 - angle_diff
             session.swell_angle_difference = angle_diff
+        
+        # Beregn surf score
+        if all(surf_data.get(key) is not None for key in ['wave_height', 'wave_period', 'wind_speed', 'wind_direction']):
+            session.surf_score = calculate_surf_score(
+                surf_data['wave_height'],
+                surf_data['wave_period'],
+                surf_data['wind_speed'],
+                surf_data['wind_direction'],
+                spot.orientation
+            )
     
     # Beregn avledede features
     session.season = _get_season(session_data.date_time)
@@ -164,6 +179,17 @@ async def get_session(session_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Session ikke funnet")
     return session
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: int, db: Session = Depends(get_db)):
+    """Slett en surf-økt"""
+    session = db.query(SurfSession).filter(SurfSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session ikke funnet")
+    
+    db.delete(session)
+    db.commit()
+    return {"message": "Session slettet"}
+
 def _get_season(date: datetime) -> str:
     """Bestem årstid basert på dato"""
     month = date.month
@@ -188,4 +214,7 @@ def _get_time_of_day(date: datetime) -> str:
 
 if __name__ == "__main__":
     import uvicorn
+    import os
+    # Change to project root directory
+    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     uvicorn.run(app, host="0.0.0.0", port=8000)
