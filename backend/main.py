@@ -9,8 +9,14 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
 
-from database import get_db, create_tables, SurfSession, SurfSpot
-from hybrid_surf_service import HybridSurfService, calculate_wind_offshore, calculate_swell_component, calculate_surf_score
+try:
+    from database import get_db, create_tables, SurfSession, SurfSpot
+    from hybrid_surf_service import HybridSurfService, calculate_wind_offshore, calculate_swell_component, calculate_surf_score
+    from surf_recommender import SurfRecommender
+except ImportError:
+    from .database import get_db, create_tables, SurfSession, SurfSpot
+    from .hybrid_surf_service import HybridSurfService, calculate_wind_offshore, calculate_swell_component, calculate_surf_score
+    from .surf_recommender import SurfRecommender
 
 app = FastAPI(title="SurfeSpotVelger API", version="1.0.0")
 
@@ -118,6 +124,10 @@ async def create_session(session_data: SurfSessionCreate, db: Session = Depends(
         session.wave_direction = surf_data.get('wave_direction')
         session.water_temperature = surf_data.get('water_temperature')
         
+        # Tidevann data
+        session.tide_level = surf_data.get('tide_height')
+        session.tide_trend = surf_data.get('tide_trend')
+        
         # Metadata
         session.data_sources = ', '.join(surf_data.get('data_sources', []))
         session.yr_api_timestamp = datetime.utcnow()
@@ -211,6 +221,117 @@ def _get_time_of_day(date: datetime) -> str:
         return "afternoon"
     else:
         return "evening"
+
+
+# Surf Recommendation Endpoints
+@app.get("/api/recommendations")
+async def get_surf_recommendations(
+    date: Optional[str] = None,
+    max_spots: int = 5,
+    db: Session = Depends(get_db)
+):
+    """
+    Få surf spot anbefalinger for en gitt dato
+    """
+    try:
+        # Parse dato eller bruk i dag
+        if date:
+            target_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+        else:
+            target_date = datetime.now()
+        
+        # Lag recommender instans
+        recommender = SurfRecommender()
+        
+        # Få anbefalinger
+        recommendations = recommender.get_spot_recommendations(target_date, max_spots)
+        
+        # Lukk recommender
+        recommender.close()
+        
+        return {
+            "date": target_date.isoformat(),
+            "recommendations": recommendations,
+            "total_spots": len(recommendations)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Feil ved henting av anbefalinger: {str(e)}")
+
+
+@app.get("/api/recommendations/{spot_name}/performance")
+async def get_spot_performance(spot_name: str, db: Session = Depends(get_db)):
+    """
+    Få historisk ytelse for en spesifikk surf spot
+    """
+    try:
+        recommender = SurfRecommender()
+        performance = recommender.get_historical_performance(spot_name)
+        recommender.close()
+        
+        return performance
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Feil ved henting av spot ytelse: {str(e)}")
+
+
+@app.get("/api/recommendations/compare")
+async def compare_spots(
+    date: Optional[str] = None,
+    spots: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Sammenlign flere surf spots for en gitt dato
+    """
+    try:
+        # Parse dato
+        if date:
+            target_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+        else:
+            target_date = datetime.now()
+        
+        # Parse spots (comma-separated)
+        if spots:
+            spot_names = [name.strip() for name in spots.split(',')]
+        else:
+            spot_names = None
+        
+        recommender = SurfRecommender()
+        
+        if spot_names:
+            # Sammenlign spesifikke spots
+            all_spots = db.query(SurfSpot).filter(SurfSpot.name.in_(spot_names)).all()
+            if len(all_spots) != len(spot_names):
+                missing = set(spot_names) - {spot.name for spot in all_spots}
+                raise HTTPException(status_code=404, detail=f"Spots ikke funnet: {missing}")
+            
+            recommendations = []
+            for spot in all_spots:
+                conditions = recommender._simulate_surf_conditions(spot, target_date)
+                surf_score = recommender._calculate_surf_score(conditions, spot)
+                
+                recommendations.append({
+                    'spot_name': spot.name,
+                    'coordinates': (spot.latitude, spot.longitude),
+                    'surf_score': surf_score,
+                    'surf_conditions': conditions,
+                    'historical_performance': recommender.get_historical_performance(spot.name)
+                })
+        else:
+            # Få alle anbefalinger
+            recommendations = recommender.get_spot_recommendations(target_date, 10)
+        
+        recommender.close()
+        
+        return {
+            "date": target_date.isoformat(),
+            "comparison": recommendations,
+            "total_spots": len(recommendations)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Feil ved sammenligning av spots: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

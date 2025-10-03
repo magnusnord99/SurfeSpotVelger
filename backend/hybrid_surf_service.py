@@ -100,13 +100,13 @@ class HybridSurfService:
             return None
     
     def _get_stormglass_period_data(self, latitude: float, longitude: float, target_time: datetime) -> Optional[Dict[str, Any]]:
-        """Hent bølgeperiode fra Stormglass API (hvis tilgjengelig i gratis tier)"""
+        """Hent bølgeperiode og tidevann fra Stormglass API"""
         try:
             timestamp = int(target_time.timestamp())
             params = {
                 'lat': latitude,
                 'lng': longitude,
-                'params': ['wavePeriod', 'waveHeight'],  # Prøv begge
+                'params': ['wavePeriod', 'waveHeight', 'tideHeight'],  # Inkluder tidevann
                 'source': 'sg',
                 'start': timestamp,
                 'end': timestamp
@@ -182,9 +182,11 @@ class HybridSurfService:
         
         wave_period = hour_data.get('wavePeriod', {}).get('sg', None)
         wave_height = hour_data.get('waveHeight', {}).get('sg', None)
+        tide_height = hour_data.get('tideHeight', {}).get('sg', None)
         
         result = {}
         
+        # Bølgeperiode
         if wave_period is not None:
             result['wave_period'] = wave_period
             result['wave_period_source'] = 'stormglass'
@@ -194,6 +196,15 @@ class HybridSurfService:
                 result['wave_period'] = self._estimate_wave_period(wave_height)
                 result['wave_period_source'] = 'estimated_from_stormglass_height'
         
+        # Tidevann
+        if tide_height is not None:
+            result['tide_height'] = tide_height
+            result['tide_source'] = 'stormglass'
+            print(f"🌊 Stormglass tidevann: {tide_height}m")
+        else:
+            print("⚠️ Ingen tidevann data fra Stormglass")
+        
+        print(f"Stormglass data mottatt: {result}")
         return result
     
     def _find_closest_time_entry(self, timeseries: list, target_time: datetime) -> Optional[Dict]:

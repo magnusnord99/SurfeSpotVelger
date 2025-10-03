@@ -7,12 +7,6 @@ def setup_surf_spots():
     """Legg inn kjente surf spots i Stavanger-området"""
     db = SessionLocal()
     
-    # Sjekk om spots allerede eksisterer
-    if db.query(SurfSpot).count() > 0:
-        print("Surf spots finnes allerede i databasen")
-        db.close()
-        return
-    
     spots = [
         {
             "name": "Bore",
@@ -55,16 +49,55 @@ def setup_surf_spots():
             "longitude": 5.4000,
             "orientation": 300,  # nordvest
             "description": "Beskyttet bay, funker på nordlige swell"
+        },
+        {
+            "name": "Sele",
+            "latitude": 58.7333,
+            "longitude": 5.4500,
+            "orientation": 280,  # vest-nordvest
+            "description": "Reef break, krever riktig swell og tidevann"
+        },
+        {
+            "name": "Kvassheim",
+            "latitude": 58.7833,
+            "longitude": 5.5167,
+            "orientation": 270,  # vest
+            "description": "Beach break, funker på de fleste forhold"
+        },
+        {
+            "name": "Point Perfect",
+            "latitude": 58.8000,
+            "longitude": 5.5000,
+            "orientation": 275,  # vest
+            "description": "Point break, krever spesifikke forhold"
         }
     ]
     
-    for spot_data in spots:
-        spot = SurfSpot(**spot_data)
-        db.add(spot)
+    # Sjekk om spots allerede eksisterer
+    existing_spots = db.query(SurfSpot).all()
+    if existing_spots:
+        print(f"Surf spots finnes allerede i databasen ({len(existing_spots)} spots)")
+        # Sjekk om nye spots må legges til
+        existing_names = [spot.name for spot in existing_spots]
+        new_spots = [spot for spot in spots if spot["name"] not in existing_names]
+        
+        if new_spots:
+            print(f"Legger til {len(new_spots)} nye spots: {[spot['name'] for spot in new_spots]}")
+            for spot_data in new_spots:
+                spot = SurfSpot(**spot_data)
+                db.add(spot)
+            db.commit()
+        else:
+            print("Alle spots finnes allerede")
+    else:
+        # Legg til alle spots hvis databasen er tom
+        for spot_data in spots:
+            spot = SurfSpot(**spot_data)
+            db.add(spot)
+        db.commit()
+        print(f"Lagt til {len(spots)} surf spots i databasen")
     
-    db.commit()
     db.close()
-    print(f"Lagt til {len(spots)} surf spots i databasen")
 
 if __name__ == "__main__":
     create_tables()

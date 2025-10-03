@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadSessions();
     setupEventListeners();
     setDefaultDateTime();
+    setupRecommendations();
 });
 
 function setupEventListeners() {
@@ -218,4 +219,117 @@ function showMessage(message, type) {
     setTimeout(() => {
         messageDiv.innerHTML = '';
     }, 5000);
+}
+
+// Surf Anbefalinger funksjonalitet
+function setupRecommendations() {
+    const getRecommendationsBtn = document.getElementById('getRecommendationsBtn');
+    const recommendationDateInput = document.getElementById('recommendationDate');
+    
+    // Sett i dag som standard dato
+    const today = new Date().toISOString().split('T')[0];
+    if (recommendationDateInput) {
+        recommendationDateInput.value = today;
+    }
+    
+    if (getRecommendationsBtn) {
+        getRecommendationsBtn.addEventListener('click', getRecommendations);
+        console.log('✅ Recommendation button event listener added');
+    } else {
+        console.log('❌ Recommendation button not found');
+    }
+}
+
+async function getRecommendations() {
+    console.log('🚀 getRecommendations function called');
+    try {
+        const dateInput = document.getElementById('recommendationDate');
+        const date = dateInput ? dateInput.value : null;
+        
+        console.log('📅 Selected date:', date);
+        
+        // Bygg URL med dato parameter
+        let url = '/api/recommendations?max_spots=5';
+        if (date) {
+            url += `&date=${date}`;
+        }
+        
+        console.log('🌐 Fetching URL:', url);
+        
+        const response = await fetch(url);
+        console.log('📡 Response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('📊 Received data:', data);
+        
+        displayRecommendations(data.recommendations);
+        
+    } catch (error) {
+        console.error('❌ Error getting recommendations:', error);
+        showMessage('Feil ved henting av anbefalinger: ' + error.message, 'error');
+    }
+}
+
+function displayRecommendations(recommendations) {
+    const recommendationsList = document.getElementById('recommendationsList');
+    
+    if (!recommendations || recommendations.length === 0) {
+        recommendationsList.innerHTML = '<p>Ingen anbefalinger tilgjengelig.</p>';
+        return;
+    }
+    
+    recommendationsList.innerHTML = recommendations.map((rec, index) => {
+        const conditions = rec.surf_conditions;
+        const rank = index + 1;
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '🏄‍♂️';
+        
+        return `
+            <div class="recommendation-item">
+                <div class="recommendation-rank">${medal}</div>
+                <div class="recommendation-header">
+                    <div class="recommendation-name">${rec.spot_name}</div>
+                    <div class="recommendation-score">${rec.surf_score}/10</div>
+                </div>
+                
+                <div class="recommendation-conditions">
+                    <div class="condition-item">
+                        <div class="condition-label">Bølgehøyde</div>
+                        <div class="condition-value">${conditions.wave_height}m</div>
+                    </div>
+                    <div class="condition-item">
+                        <div class="condition-label">Bølgeperiode</div>
+                        <div class="condition-value">${conditions.wave_period}s</div>
+                    </div>
+                    <div class="condition-item">
+                        <div class="condition-label">Vind</div>
+                        <div class="condition-value">${conditions.wind_speed} m/s</div>
+                    </div>
+                    <div class="condition-item">
+                        <div class="condition-label">Vindretning</div>
+                        <div class="condition-value">${conditions.offshore_wind ? 'Offshore ✅' : 'Onshore ❌'}</div>
+                    </div>
+                    <div class="condition-item">
+                        <div class="condition-label">Temperatur</div>
+                        <div class="condition-value">${Math.round(conditions.air_temperature)}°C</div>
+                    </div>
+                    <div class="condition-item">
+                        <div class="condition-label">Tidevann</div>
+                        <div class="condition-value">${conditions.tide_height.toFixed(1)}m</div>
+                    </div>
+                </div>
+                
+                <div class="recommendation-reason">
+                    <strong>Anbefaling:</strong> ${rec.recommendation_reason}
+                </div>
+                
+                <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                    <strong>Koordinater:</strong> ${rec.coordinates[0].toFixed(4)}°N, ${rec.coordinates[1].toFixed(4)}°E
+                </div>
+            </div>
+        `;
+    }).join('');
 }
