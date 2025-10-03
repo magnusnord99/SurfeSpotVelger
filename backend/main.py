@@ -64,6 +64,20 @@ class SurfSpotResponse(BaseModel):
     orientation: float
     description: Optional[str]
 
+class SurfSpotCreate(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    orientation: float
+    description: Optional[str] = ""
+
+class SurfSpotUpdate(BaseModel):
+    name: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    orientation: Optional[float] = None
+    description: Optional[str] = None
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
@@ -80,6 +94,85 @@ async def get_spots(db: Session = Depends(get_db)):
     """Hent alle surf spots"""
     spots = db.query(SurfSpot).all()
     return spots
+
+@app.post("/api/spots", response_model=SurfSpotResponse)
+async def create_spot(spot_data: SurfSpotCreate, db: Session = Depends(get_db)):
+    """Opprett ny surf spot"""
+    # Sjekk om spot med samme navn allerede eksisterer
+    existing_spot = db.query(SurfSpot).filter(SurfSpot.name == spot_data.name).first()
+    if existing_spot:
+        raise HTTPException(status_code=400, detail=f"Spot med navn '{spot_data.name}' eksisterer allerede")
+    
+    # Opprett ny spot
+    new_spot = SurfSpot(
+        name=spot_data.name,
+        latitude=spot_data.latitude,
+        longitude=spot_data.longitude,
+        orientation=spot_data.orientation,
+        description=spot_data.description
+    )
+    
+    db.add(new_spot)
+    db.commit()
+    db.refresh(new_spot)
+    
+    return new_spot
+
+@app.get("/api/spots/{spot_id}", response_model=SurfSpotResponse)
+async def get_spot(spot_id: int, db: Session = Depends(get_db)):
+    """Hent en spesifikk surf spot"""
+    spot = db.query(SurfSpot).filter(SurfSpot.id == spot_id).first()
+    if not spot:
+        raise HTTPException(status_code=404, detail="Spot ikke funnet")
+    return spot
+
+@app.put("/api/spots/{spot_id}", response_model=SurfSpotResponse)
+async def update_spot(spot_id: int, spot_data: SurfSpotUpdate, db: Session = Depends(get_db)):
+    """Oppdater en surf spot"""
+    spot = db.query(SurfSpot).filter(SurfSpot.id == spot_id).first()
+    if not spot:
+        raise HTTPException(status_code=404, detail="Spot ikke funnet")
+    
+    # Oppdater kun felter som er oppgitt
+    if spot_data.name is not None:
+        # Sjekk om nytt navn allerede eksisterer (hvis det er endret)
+        if spot_data.name != spot.name:
+            existing_spot = db.query(SurfSpot).filter(SurfSpot.name == spot_data.name).first()
+            if existing_spot:
+                raise HTTPException(status_code=400, detail=f"Spot med navn '{spot_data.name}' eksisterer allerede")
+        spot.name = spot_data.name
+    
+    if spot_data.latitude is not None:
+        spot.latitude = spot_data.latitude
+    if spot_data.longitude is not None:
+        spot.longitude = spot_data.longitude
+    if spot_data.orientation is not None:
+        spot.orientation = spot_data.orientation
+    if spot_data.description is not None:
+        spot.description = spot_data.description
+    
+    db.commit()
+    db.refresh(spot)
+    return spot
+
+@app.delete("/api/spots/{spot_id}")
+async def delete_spot(spot_id: int, db: Session = Depends(get_db)):
+    """Slett en surf spot"""
+    spot = db.query(SurfSpot).filter(SurfSpot.id == spot_id).first()
+    if not spot:
+        raise HTTPException(status_code=404, detail="Spot ikke funnet")
+    
+    # Sjekk om spot har tilknyttede økter
+    sessions_count = db.query(SurfSession).filter(SurfSession.spot_id == spot_id).count()
+    if sessions_count > 0:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Kan ikke slette spot som har {sessions_count} tilknyttede økter. Slett øktene først."
+        )
+    
+    db.delete(spot)
+    db.commit()
+    return {"message": f"Spot '{spot.name}' slettet"}
 
 @app.post("/api/sessions", response_model=SurfSessionResponse)
 async def create_session(session_data: SurfSessionCreate, db: Session = Depends(get_db)):

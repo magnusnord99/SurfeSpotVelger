@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     setDefaultDateTime();
     setupRecommendations();
+    setupSpotManagement();
 });
 
 function setupEventListeners() {
@@ -240,6 +241,42 @@ function setupRecommendations() {
     }
 }
 
+// Spot administrasjon funksjonalitet
+function setupSpotManagement() {
+    const addSpotBtn = document.getElementById('addSpotBtn');
+    const manageSpotsBtn = document.getElementById('manageSpotsBtn');
+    const addSpotForm = document.getElementById('addSpotForm');
+    const spotManagementList = document.getElementById('spotManagementList');
+    const spotForm = document.getElementById('spotForm');
+    const cancelAddSpot = document.getElementById('cancelAddSpot');
+    
+    if (addSpotBtn) {
+        addSpotBtn.addEventListener('click', () => {
+            addSpotForm.style.display = 'block';
+            spotManagementList.style.display = 'none';
+        });
+    }
+    
+    if (manageSpotsBtn) {
+        manageSpotsBtn.addEventListener('click', () => {
+            spotManagementList.style.display = 'block';
+            addSpotForm.style.display = 'none';
+            loadSpotsForManagement();
+        });
+    }
+    
+    if (cancelAddSpot) {
+        cancelAddSpot.addEventListener('click', () => {
+            addSpotForm.style.display = 'none';
+            spotForm.reset();
+        });
+    }
+    
+    if (spotForm) {
+        spotForm.addEventListener('submit', handleAddSpot);
+    }
+}
+
 async function getRecommendations() {
     console.log('🚀 getRecommendations function called');
     try {
@@ -332,4 +369,107 @@ function displayRecommendations(recommendations) {
             </div>
         `;
     }).join('');
+}
+
+// Spot administrasjon funksjoner
+async function handleAddSpot(event) {
+    event.preventDefault();
+    
+    const spotData = {
+        name: document.getElementById('spotName').value,
+        latitude: parseFloat(document.getElementById('spotLatitude').value),
+        longitude: parseFloat(document.getElementById('spotLongitude').value),
+        orientation: parseFloat(document.getElementById('spotOrientation').value),
+        description: document.getElementById('spotDescription').value
+    };
+    
+    try {
+        const response = await fetch('/api/spots', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(spotData)
+        });
+        
+        if (response.ok) {
+            const newSpot = await response.json();
+            showMessage(`Spot "${newSpot.name}" lagt til!`, 'success');
+            
+            // Reset form og skjul
+            document.getElementById('spotForm').reset();
+            document.getElementById('addSpotForm').style.display = 'none';
+            
+            // Reload spots for session form
+            loadSpots();
+            
+        } else {
+            const error = await response.json();
+            showMessage(`Feil: ${error.detail}`, 'error');
+        }
+        
+    } catch (error) {
+        showMessage('Feil ved oppretting av spot', 'error');
+        console.error('Error adding spot:', error);
+    }
+}
+
+async function loadSpotsForManagement() {
+    try {
+        const response = await fetch('/api/spots');
+        const spotsData = await response.json();
+        
+        const spotsList = document.getElementById('spotsList');
+        spotsList.innerHTML = spotsData.map(spot => `
+            <div class="spot-item">
+                <div class="spot-info">
+                    <div class="spot-name">${spot.name}</div>
+                    <div class="spot-details">
+                        📍 ${spot.latitude.toFixed(4)}°N, ${spot.longitude.toFixed(4)}°E | 
+                        🧭 ${spot.orientation}° | 
+                        📝 ${spot.description || 'Ingen beskrivelse'}
+                    </div>
+                </div>
+                <div class="spot-actions">
+                    <button class="btn-small btn-edit" onclick="editSpot(${spot.id})">Rediger</button>
+                    <button class="btn-small btn-delete" onclick="deleteSpot(${spot.id}, '${spot.name}')">Slett</button>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        showMessage('Feil ved henting av spots', 'error');
+        console.error('Error loading spots:', error);
+    }
+}
+
+async function deleteSpot(spotId, spotName) {
+    if (!confirm(`Er du sikker på at du vil slette spot "${spotName}"?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/spots/${spotId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showMessage(`Spot "${spotName}" slettet!`, 'success');
+            loadSpotsForManagement(); // Refresh list
+            loadSpots(); // Refresh session form
+        } else {
+            const error = await response.json();
+            showMessage(`Feil: ${error.detail}`, 'error');
+        }
+        
+    } catch (error) {
+        showMessage('Feil ved sletting av spot', 'error');
+        console.error('Error deleting spot:', error);
+    }
+}
+
+function editSpot(spotId) {
+    // For enkelhets skyld, vi kan implementere en enkel redigeringsmodal
+    // eller åpne i nytt vindu. For nå viser vi bare en melding.
+    showMessage('Redigeringsfunksjon kommer snart! Du kan slette og legge til på nytt.', 'info');
 }
